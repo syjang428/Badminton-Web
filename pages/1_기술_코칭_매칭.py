@@ -85,6 +85,24 @@ ws_absentees = sheet.worksheet("불참자")
 ws_matches = sheet.worksheet("매치")
 ws_feedbacks = sheet.worksheet("후기")
 
+# ---- 각 워크시트별 캐싱 로더 ----
+@st.cache_data(ttl=60)
+def load_participants_cached():
+    return ws_participants.get_all_records()
+
+@st.cache_data(ttl=60)
+def load_absentees_cached():
+    return ws_absentees.get_all_records()
+
+@st.cache_data(ttl=60)
+def load_matches_cached():
+    return ws_matches.get_all_records()
+
+@st.cache_data(ttl=60)
+def load_feedbacks_cached():
+    return ws_feedbacks.get_all_records()
+
+
 # ------------------ 🎨 스타일 ------------------
 st.markdown("""
     <style>
@@ -174,6 +192,11 @@ with st.sidebar:
                 ws_feedbacks.clear()
                 ws_feedbacks.append_row(["역할", "이름", "시간", "후기", "작성시간"])
 
+                load_participants_cached.clear()
+                load_absentees_cached.clear()
+                load_matches_cached.clear()
+                load_feedbacks_cached.clear()
+
                 # 세션 상태 중 초기화할 키만 선택적으로 초기화
                 keys_to_reset = ["participants", "non_attendees", "attendance", "game_results",
                                 "teams", "team_pairs", "match_scores", "partner_selections"]
@@ -197,14 +220,9 @@ with st.sidebar:
             st.success("초기화 완료")
             del st.session_state["just_reset"]
 
-# 상단에 추가
-@st.cache_data(ttl=300)
-def load_all_records(_worksheet):
-    return _worksheet.get_all_records()
-
 # 📌 구글 시트와 세션 상태를 함께 확인하는 최종 매칭 여부 판별
 def is_finalized():
-    match_data = ws_matches.get_all_records()
+    match_data = load_matches_cached()
     if len(match_data) > 0:
         return True
     return st.session_state.get("finalized", False)
@@ -213,7 +231,7 @@ def is_finalized():
 if st.session_state.is_admin:
     # 참가자 현황
     if st.session_state.get("show_participants", False):
-        participants_data = ws_participants.get_all_records()
+        participants_data = load_participants_cached()
         st.subheader("👥 참가자 현황")
         if participants_data:
             st.dataframe(participants_data)
@@ -223,7 +241,7 @@ if st.session_state.is_admin:
 
     # 불참자 현황
     if st.session_state.get("show_absentees", False):
-        absentees_data = ws_absentees.get_all_records()  # 참가자 워크시트가 아니라 불참자 워크시트 확인
+        absentees_data = load_absentees_cached()  # 참가자 워크시트가 아니라 불참자 워크시트 확인
         if absentees_data:
             st.subheader("🚫불참자 현황")
             st.dataframe(absentees_data)
@@ -232,7 +250,7 @@ if st.session_state.is_admin:
 
     # ------------------ 코칭 매칭 (관리자) ------------------
     if st.session_state.get("show_matching", False):
-        participants = load_all_records(ws_participants)
+        participants = load_participants_cached()
         coaches = [p for p in participants if "코칭자" in p["역할"]]
         students = [p for p in participants if "레슨자" in p["역할"]]
 
@@ -422,13 +440,14 @@ if st.session_state.is_admin:
                     if student_val and student_val != "빈 코트":
                         ws_matches.append_row([m["시간"], m["코트"], coach_val if coach_val else "", student_val, skill_val])
             
+            load_matches_cached.clear()
             st.session_state.finalized = True
             st.success("최종 매칭 완료! 모든 코트가 반영되었습니다.")
 
 
     # 후기 확인
     if st.session_state.get("show_feedbacks", False):
-        feedbacks_data = ws_feedbacks.get_all_records()
+        feedbacks_data = load_feedbacks_cached()
         if feedbacks_data:
             st.subheader("코칭 후기")
             st.dataframe(feedbacks_data)
@@ -438,7 +457,6 @@ if st.session_state.is_admin:
 
 # 비관리자 모드에서 참가자 제출 전 입력 부분
 if not st.session_state.is_admin and not st.session_state.finalized:
-    participants_data = load_all_records(ws_participants)
     name = st.text_input("성명을 입력하시오")
     lunch = st.radio("오늘 점심에 오나요?", ["예", "아니오"])
 
@@ -502,12 +520,14 @@ if not st.session_state.is_admin and not st.session_state.finalized:
                 str(other_skill),
                 str(student_times) if student_times else "",
             ])
+            load_participants_cached.clear()
             st.success("제출 완료! 참가자 현황에 반영되었습니다.")
             st.session_state.show_participants = True
             st.rerun()
 
         else:
             ws_absentees.append_row([str(name), str(reason)])
+            load_absentees_cached.clear()
             st.success("제출 완료! 불참자 목록에 반영되었습니다.")
             st.session_state.show_absentees = True
             st.rerun()
@@ -517,7 +537,7 @@ if not st.session_state.is_admin and not st.session_state.finalized:
 if not st.session_state.is_admin:
     if not is_finalized():
         st.subheader("👥 참가자 현황")
-        participants_data = ws_participants.get_all_records()
+        participants_data = load_participants_cached()
 
         if participants_data:
             # 시간대 집합 생성 (코칭자와 레슨자 시간 합치기)
@@ -555,7 +575,7 @@ if not st.session_state.is_admin:
 
     else:
         # ✅ 최종 매칭 결과
-        matches = ws_matches.get_all_records()
+        matches = load_matches_cached()
         timeslots = sorted(set([m.get("시간") for m in matches if m.get("시간")]))
 
         if not timeslots:
@@ -585,8 +605,9 @@ if not st.session_state.is_admin:
 
         if st.button("코칭 완료", key="complete_feedback_btn"):
             if name and feedback:
-                now = datetime.now().strftime("%H:%M:%S")
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ws_feedbacks.append_row([role, name, time, feedback, now])
+                load_feedbacks_cached.clear()
                 st.success("코칭 완료! 출석이 기록되었습니다.")
             else:
                 st.warning("이름과 후기는 반드시 입력해야 합니다.")

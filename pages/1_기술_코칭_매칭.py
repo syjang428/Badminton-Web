@@ -79,28 +79,39 @@ def get_sheet():
     return client.open_by_url("https://docs.google.com/spreadsheets/d/1CT5AC_bNhWHm3YxPuI00xhdgYrYu2XMNZVFBT31R0aw/edit?usp=sharing")
 sheet = get_sheet()
 
-# 워크시트 불러오기
-ws_participants = sheet.worksheet("참가자")
-ws_absentees = sheet.worksheet("불참자")
-ws_matches = sheet.worksheet("매치")
-ws_feedbacks = sheet.worksheet("후기")
+# 워크시트 불러오기 (캐싱 적용)
+@st.cache_resource
+def get_worksheets(_sheet):
+    return {
+        "participants": _sheet.worksheet("참가자"),
+        "absentees": _sheet.worksheet("불참자"),
+        "matches": _sheet.worksheet("매치"),
+        "feedbacks": _sheet.worksheet("후기")
+    }
+
+# 호출부도 변경
+worksheets = get_worksheets(sheet)
+ws_participants = worksheets["participants"]
+ws_absentees = worksheets["absentees"]
+ws_matches = worksheets["matches"]
+ws_feedbacks = worksheets["feedbacks"]
 
 # ---- 각 워크시트별 캐싱 로더 ----
 @st.cache_data(ttl=60)
 def load_participants_cached():
-    return ws_participants.get_all_records()
+    return worksheets["participants"].get_all_records()
 
 @st.cache_data(ttl=60)
 def load_absentees_cached():
-    return ws_absentees.get_all_records()
+    return worksheets["absentees"].get_all_records()
 
 @st.cache_data(ttl=60)
 def load_matches_cached():
-    return ws_matches.get_all_records()
+    return worksheets["matches"].get_all_records()
 
 @st.cache_data(ttl=60)
 def load_feedbacks_cached():
-    return ws_feedbacks.get_all_records()
+    return worksheets["feedbacks"].get_all_records()
 
 
 # ------------------ 🎨 스타일 ------------------
@@ -180,16 +191,16 @@ with st.sidebar:
 
             def reset_all():
                 # 구글 시트 초기화 및 헤더 재설정
-                ws_participants.clear()
+                worksheets["participants"].clear()
                 ws_participants.append_row(["이름", "역할", "코칭 가능 레벨", "코칭 가능 시간대", "학생 레벨", "희망 기술", "기타 기술", "레슨 희망 시간대"])
 
-                ws_absentees.clear()
+                worksheets["absentees"].clear()
                 ws_absentees.append_row(["이름", "불참 사유"])
 
-                ws_matches.clear()
+                worksheets["matches"].clear()
                 ws_matches.append_row(["시간", "코칭자", "레슨자", "기술"])
 
-                ws_feedbacks.clear()
+                worksheets["feedbacks"].clear()
                 ws_feedbacks.append_row(["역할", "이름", "시간", "후기", "작성시간"])
 
                 load_participants_cached.clear()
@@ -427,9 +438,10 @@ if st.session_state.is_admin:
 
         # ✅ 최종 제출 버튼
         if st.button("최종 제출", key="submit_matches_btn"):
-            ws_matches.clear()
-            ws_matches.append_row(["시간","코트","코칭자","레슨자","기술"])
-            
+            worksheets["matches"].clear()
+            worksheets["matches"].append_row(["시간","코트","코칭자","레슨자","기술"])
+            load_matches_cached.clear()
+
             for t in timeslots:
                 for m in [mm for mm in matches if mm["시간"] == t]:
                     coach_val = st.session_state.get(f"coach_edit_{m['시간']}_{m['코트']}", "")
@@ -510,7 +522,7 @@ if not st.session_state.is_admin and not st.session_state.finalized:
     # 제출 버튼 (비관리자)
     if st.button("제출", key="submit_participant_btn"):
         if lunch == "예":
-            ws_participants.append_row([
+            worksheets["participants"].append_row([
                 str(name),
                 ", ".join(roles) if roles else "",
                 str(coach_level_max) if coach_level_max else "",
@@ -526,7 +538,7 @@ if not st.session_state.is_admin and not st.session_state.finalized:
             st.rerun()
 
         else:
-            ws_absentees.append_row([str(name), str(reason)])
+            worksheets["absentees"].append_row([str(name), str(reason)])
             load_absentees_cached.clear()
             st.success("제출 완료! 불참자 목록에 반영되었습니다.")
             st.session_state.show_absentees = True

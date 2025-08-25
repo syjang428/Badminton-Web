@@ -97,19 +97,19 @@ ws_matches = worksheets["matches"]
 ws_feedbacks = worksheets["feedbacks"]
 
 # ---- 각 워크시트별 캐싱 로더 ----
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_participants_cached():
     return worksheets["participants"].get_all_records()
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_absentees_cached():
     return worksheets["absentees"].get_all_records()
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_matches_cached():
     return worksheets["matches"].get_all_records()
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_feedbacks_cached():
     return worksheets["feedbacks"].get_all_records()
 
